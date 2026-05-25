@@ -16,10 +16,10 @@ app.add_middleware(
 )
 
 # የቴሌግራም ቦት እና የቻናል መረጃዎች
-BOT_TOKEN = "8725682957:AAHaYE-5vomUfhJ5db6MjoQMPkfakdiyaA0"      # ከ @BotFather ያገኘኸው Token
+BOT_TOKEN = "8776155702:AAHQnmYDM0qIbYqyxZJ3l9O8fxJoLG2cGTk"      # ከ @BotFather ያገኘኸው Token
 CHANNEL_ID = "@hbeo11"   # የአንተ ቻናል ዩዘርኔም (በ @ የሚጀምር)
 
-class DownloadRequest(BaseModel):
+class DownloadRequest(BaseModel): 
     url: str
 
 class CheckJoinRequest(BaseModel):
