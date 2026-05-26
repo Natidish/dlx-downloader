@@ -3,241 +3,228 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DLX Multi-Media Downloader</title>
-    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <title>DLX Multi-Downloader</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <script src="https://sad.adsgram.ai/js/sad.min.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://sad.adsgram.ai/js/adsgram-api.js"></script>
+    <style>
+        :root {
+            --bg-color: #0b1426;
+            --card-bg: #152238;
+            --primary-color: #007bff;
+            --text-color: #ffffff;
+            --accent-color: #28a745;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 90vh;
+        }
+        .container {
+            background-color: var(--card-bg);
+            padding: 25px;
+            border-radius: 20px;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+            box-sizing: border-box;
+            text-align: center;
+        }
+        .logo-container {
+            margin-bottom: 20px;
+        }
+        .logo {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, #007bff, #00c6ff);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto;
+            font-size: 32px;
+            box-shadow: 0 4px 15px rgba(0,123,255,0.4);
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #23395b;
+            border-radius: 12px;
+            background-color: #0b1426;
+            color: white;
+            font-size: 16px;
+            margin-bottom: 15px;
+            box-sizing: border-box;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+        input[type="text"]:focus {
+            border-color: var(--primary-color);
+        }
+        button {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #0056b3, #007bff);
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.1s, opacity 0.3s;
+        }
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .status {
+            margin-top: 15px;
+            font-size: 14px;
+            color: #b0c4de;
+        }
+        /* Modal Style */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background: var(--card-bg);
+            padding: 30px;
+            border-radius: 20px;
+            max-width: 320px;
+            width: 90%;
+            text-align: center;
+        }
+        .modal-btn {
+            background: var(--accent-color);
+            margin-top: 15px;
+        }
+    </style>
 </head>
-<body class="bg-[#0f172a] text-white font-sans antialiased min-h-screen flex items-center justify-center p-4">
+<body>
 
-<div class="w-full max-w-md bg-[#1e293b] rounded-3xl p-6 shadow-2xl border border-[#334155] relative overflow-hidden">
-    
-    <div class="absolute top-4 right-4 flex space-x-2 bg-[#0f172a] p-1 rounded-lg border border-[#334155] text-xs font-bold">
-        <button id="langEn" onclick="switchLanguage('en')" class="px-2 py-1 rounded bg-blue-600 text-white transition">EN</button>
-        <button id="langAm" onclick="switchLanguage('am')" class="px-2 py-1 rounded text-gray-400 transition">አማ</button>
+    <div class="container">
+        <div class="logo-container">
+            <div class="logo">⚡</div>
+            <h2 style="margin: 10px 0 5px 0;">DLX Downloader</h2>
+            <p style="color: #8a9bb4; font-size: 14px; margin: 0 0 20px 0;">Download Without Watermark</p>
+        </div>
+
+        <input type="text" id="linkInput" placeholder="Paste video link here...">
+        <button id="actionBtn" onclick="handleDownload()">Analyze Link</button>
+        <div class="status" id="statusText"></div>
     </div>
 
-    <div class="text-center mb-6 mt-4">
-        <div class="inline-flex bg-gradient-to-r from-cyan-500 to-blue-600 p-4 rounded-full text-white text-3xl mb-3 shadow-lg shadow-blue-500/20">
-            <i class="fa-solid fa-bolt"></i>
-        </div>
-        <h1 class="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">DLX Downloader</h1>
-        <p id="txtSubtitle" class="text-gray-400 text-xs mt-1">Download videos with NO WATERMARK instantly!</p>
-        
-        <div class="flex justify-center space-x-4 mt-4 text-xl text-gray-400">
-            <i class="fa-brands fa-tiktok hover:text-white transition" title="TikTok"></i>
-            <i class="fa-brands fa-instagram hover:text-pink-500 transition" title="Instagram"></i>
-            <i class="fa-brands fa-facebook hover:text-blue-500 transition" title="Facebook"></i>
-            <i class="fa-brands fa-youtube hover:text-red-500 transition" title="YouTube Shorts"></i>
-        </div>
-    </div>
-
-    <div id="joinLockSection" class="space-y-4 text-center">
-        <div id="txtJoinAlert" class="bg-amber-500/10 border border-amber-500/30 p-4 rounded-xl text-sm text-amber-400">
-            <i class="fa-solid fa-circle-exclamation mr-2"></i> You must join our channel to use this app!
-        </div>
-        <a href="https://t.me/your_channel_id" target="_blank" class="block w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-xl transition text-center shadow-lg shadow-blue-600/20">
-            <i class="fa-brands fa-telegram mr-2"></i> Join Telegram Channel
-        </a>
-        <button id="btnCheckJoin" onclick="verifySubscription()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 px-4 rounded-xl transition shadow-lg shadow-emerald-600/20">
-            <i class="fa-solid fa-circle-check mr-2"></i> I have joined
-        </button>
-    </div>
-
-    <div id="mainAppSection" class="hidden space-y-4">
-        <div class="relative">
-            <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
-                <i class="fa-solid fa-link"></i>
-            </span>
-            <input type="text" id="linkInput" placeholder="Paste link here (TikTok, Instagram, FB, YT)..." class="w-full pl-10 pr-4 py-3 bg-[#0f172a] border border-[#334155] rounded-xl focus:outline-none focus:border-cyan-500 transition duration-200 text-sm text-white placeholder-gray-500">
-        </div>
-        
-        <button id="btnAnalyze" onclick="processMedia()" class="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg shadow-blue-500/20 transition">
-            Analyze Link
-        </button>
-
-        <div id="loader" class="hidden text-center py-4 text-cyan-400 text-sm font-medium animate-pulse">
-            <i class="fa-solid fa-spinner animate-spin mr-2"></i> Analyzing link, please wait...
-        </div>
-
-        <div id="downloadZone" class="hidden bg-[#0f172a] p-4 rounded-2xl border border-[#334155] space-y-4">
-            <h4 id="mediaTitle" class="text-sm font-semibold text-gray-200 truncate"></h4>
-            
-            <div class="space-y-1">
-                <div class="flex justify-between text-xs text-gray-400">
-                    <span id="txtShareCount">Share with 3 friends:</span>
-                    <span id="shareCountLabel">0 / 3</span>
-                </div>
-                <div class="w-full bg-gray-700 h-2 rounded-full overflow-hidden">
-                    <div id="shareProgressBar" class="bg-gradient-to-r from-cyan-400 to-blue-500 h-full w-0 transition-all duration-300"></div>
-                </div>
-            </div>
-
-            <button id="btnShare" onclick="shareWithFriends()" class="w-full bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold py-2.5 px-4 rounded-xl text-sm transition shadow-lg shadow-amber-500/10">
-                <i class="fa-solid fa-share-nodes mr-2"></i> Share to Friend
-            </button>
-
-            <button id="realDownloadBtn" disabled class="w-full bg-gray-600 text-gray-400 font-bold py-3 px-4 rounded-xl text-center cursor-not-allowed transition">
-                <i class="fa-solid fa-lock mr-2"></i> Share first
-            </button>
+    <div class="modal" id="channelModal">
+        <div class="modal-content">
+            <h3>📢 Join Our Channel</h3>
+            <p style="color: #b0c4de; font-size: 14px;">To support us and continue downloading unlimited videos, please join our updates channel.</p>
+            <button onclick="goToChannel()">Join Channel</button>
+            <button class="modal-btn" onclick="verifyJoin()">I Have Joined</button>
         </div>
     </div>
 
-</div>
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
 
-<script>
-    const WebApp = window.Telegram.WebApp;
-    WebApp.ready();
-    WebApp.expand();
+        // ⚠️ ማስተካከያ፦ እዚህ ጋር የራስህን መረጃዎች አስገባ
+        const RENDER_SERVER = "https://dlx-downloader.onrender.com"; // የሬንደር ሊንክህ
+        const TELEGRAM_CHANNEL = "https://t.me/hbeo11"; // የአንተ ቴሌግራም ቻናል ሊንክ
+        const ADSGRAM_BLOCK_ID = "3366"; // የአድስግራም ብሎክ ID (ካልነበረህ 3366 ማሳያ ነው)
 
-    const userId = WebApp.initDataUnsafe?.user?.id || "";
-    const BACKEND_URL = "https://dlx-downloader.onrender.com"; 
-    const AdController = window.Adsgram.init({ blockId: "YOUR_ADSGRAM_BLOCK_ID" });
+        let isSecondTime = localStorage.getItem("download_count") ? true : false;
+        let hasJoined = localStorage.getItem("has_joined") === "true";
 
-    let finalUrl = "";
-    let shareCount = 0;
-    let currentLang = "en";
+        // Adsgram ማስታወቂያ ማዘጋጃ
+        const AdController = window.Adsgram.init({ blockId: ADSGRAM_BLOCK_ID });
 
-    // የትርጉም ቃላት ማከማቻ (Translations)
-    const translations = {
-        en: {
-            subtitle: "Download videos with NO WATERMARK instantly!",
-            joinAlert: "You must join our channel to use this app!",
-            btnCheckJoin: "I have joined",
-            placeholder: "Paste link here (TikTok, Instagram, FB, YT)...",
-            btnAnalyze: "Analyze Link",
-            loading: "Analyzing link, please wait...",
-            shareTxt: "Share with 3 friends:",
-            btnShare: "Share to Friend",
-            lockTxt: "Share first",
-            successBtn: "Download Video (No Logo) 🚀"
-        },
-        am: {
-            subtitle: "ቪዲዮዎችን ያለምንም ሎጎ (Watermark) በቅጽበት ያውርዱ!",
-            joinAlert: "አፑን ለመጠቀም መጀመሪያ ቻናላችንን መቀላቀል አለብዎት!",
-            btnCheckJoin: "ጆይን ማድረጌን አረጋግጥ",
-            placeholder: "የቪዲዮውን ሊንክ እዚህ ያጥብቁ...",
-            btnAnalyze: "ሊንኩን መርምር",
-            loading: "ሊንኩ እየተመረመረ ነው፣ እባክዎ ይጠብቁ...",
-            shareTxt: "ለ 3 ጓደኛዎ ሼር ያድርጉ፦",
-            btnShare: "ለጓደኛ ሼር አድርግ",
-            lockTxt: "መጀመሪያ ሼር ያድርጉ",
-            successBtn: "ቪዲዮውን ያለምንም ሎጎ አውርድ 🚀"
-        }
-    };
-
-    function switchLanguage(lang) {
-        currentLang = lang;
-        document.getElementById('txtSubtitle').innerText = translations[lang].subtitle;
-        document.getElementById('txtJoinAlert').innerHTML = `<i class="fa-solid fa-circle-exclamation mr-2"></i> ` + translations[lang].joinAlert;
-        document.getElementById('btnCheckJoin').innerHTML = `<i class="fa-solid fa-circle-check mr-2"></i> ` + translations[lang].btnCheckJoin;
-        document.getElementById('linkInput').placeholder = translations[lang].placeholder;
-        document.getElementById('btnAnalyze').innerText = translations[lang].btnAnalyze;
-        document.getElementById('loader').innerHTML = `<i class="fa-solid fa-spinner animate-spin mr-2"></i> ` + translations[lang].loading;
-        document.getElementById('txtShareCount').innerText = translations[lang].shareTxt;
-        document.getElementById('btnShare').innerHTML = `<i class="fa-solid fa-share-nodes mr-2"></i> ` + translations[lang].btnShare;
-        
-        // የቋንቋ ቁልፎችን ከለር መቀየር
-        if(lang === 'am') {
-            document.getElementById('langAm').className = "px-2 py-1 rounded bg-blue-600 text-white transition";
-            document.getElementById('langEn').className = "px-2 py-1 rounded text-gray-400 transition";
-        } else {
-            document.getElementById('langEn').className = "px-2 py-1 rounded bg-blue-600 text-white transition";
-            document.getElementById('langAm').className = "px-2 py-1 rounded text-gray-400 transition";
-        }
-        updateShareUI();
-    }
-
-    async function verifySubscription() {
-        if(!userId) return showMainApp(); // ለቴስት
-
-        try {
-            const res = await fetch(`${BACKEND_URL}/check-join`, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ user_id: String(userId) })
-            });
-            const data = await res.json();
-            if(data.is_joined) showMainApp();
-            else WebApp.showAlert(currentLang === 'am' ? "እባክዎ መጀመሪያ ቻናሉን ይቀላቀሉ!" : "Please join the channel first!");
-        } catch (err) {
-            showMainApp();
-        }
-    }
-
-    function showMainApp() {
-        document.getElementById('joinLockSection').classList.add('hidden');
-        document.getElementById('mainAppSection').classList.remove('hidden');
-    }
-
-    async function processMedia() {
-        const urlValue = document.getElementById('linkInput').value;
-        if(!urlValue) return WebApp.showAlert(currentLang === 'am' ? "እባክዎ ሊንክ ያስገቡ!" : "Please paste a link!");
-
-        document.getElementById('loader').classList.remove('hidden');
-        document.getElementById('downloadZone').classList.add('hidden');
-
-        try {
-            const res = await fetch(`${BACKEND_URL}/extract`, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ url: urlValue })
-            });
-            const data = await res.json();
-            document.getElementById('loader').classList.add('hidden');
-
-            if(data.status === "success") {
-                finalUrl = data.download_url;
-                document.getElementById('mediaTitle').innerText = data.title;
-                document.getElementById('downloadZone').classList.remove('hidden');
-                shareCount = 0;
-                updateShareUI();
-            } else {
-                WebApp.showAlert(currentLang === 'am' ? "ሊንኩን መስበር አልተቻለም!" : "Failed to parse link!");
+        function handleDownload() {
+            const url = document.getElementById("linkInput").value.trim();
+            if (!url) {
+                showStatus("Please paste a valid link!", "#ff4d4d");
+                return;
             }
-        } catch (err) {
-            document.getElementById('loader').classList.add('hidden');
-            WebApp.showAlert("Error connecting to server!");
-        }
-    }
 
-    function shareWithFriends() {
-        const appUrl = "https://t.me/YOUR_BOT_USERNAME/app_name"; 
-        const shareMsg = currentLang === 'am' ? "ይህንን ቪዲዮ ማውረጃ ቦት ተጠቀም!" : "Use this premium video downloader bot!";
-        WebApp.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(appUrl)}&text=${encodeURIComponent(shareMsg)}`);
-        
-        setTimeout(() => {
-            if(shareCount < 3) {
-                shareCount++;
-                updateShareUI();
+            // ለሁለተኛ ጊዜ የመጣ ከሆነና ቻናሉን ካልቀላቀለ መጀመሪያ ግዴታውን አሳይ
+            if (isSecondTime && !hasJoined) {
+                document.getElementById("channelModal").style.display = "flex";
+                return;
             }
-        }, 2000);
-    }
 
-    function updateShareUI() {
-        document.getElementById('shareCountLabel').innerText = `${shareCount} / 3`;
-        const percent = (shareCount / 3) * 100;
-        document.getElementById('shareProgressBar').style.width = `${percent}%`;
+            // መጀመሪያ ማስታወቂያ አሳይ
+            showStatus("Loading Ad...", "#ffc107");
+            AdController.show().then((result) => {
+                // ማስታወቂያው በተሳካ ሁኔታ ካለፈ ወደ ማውረድ ሂድ
+                processVideoDownload(url);
+            }).catch((err) => {
+                // ማስታወቂያ ባይመጣም እንኳን ተጠቃሚው እንዳይሰለች ቀጥታ አውርድለት
+                console.log("Ad skipped or error:", err);
+                processVideoDownload(url);
+            });
+        }
 
-        const btn = document.getElementById('realDownloadBtn');
-        if(shareCount >= 3) {
-            btn.disabled = false;
-            btn.className = "w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-bold py-3 px-4 rounded-xl text-center cursor-pointer shadow-lg shadow-emerald-500/20 transition";
-            btn.innerHTML = `<i class="fa-solid fa-circle-down mr-2"></i> ${translations[currentLang].successBtn}`;
-            btn.onclick = triggerAdAndDownload;
-        } else {
+        async function processVideoDownload(videoUrl) {
+            const btn = document.getElementById("actionBtn");
             btn.disabled = true;
-            btn.className = "w-full bg-gray-600 text-gray-400 font-bold py-3 px-4 rounded-xl text-center cursor-not-allowed";
-            btn.innerHTML = `<i class="fa-solid fa-lock mr-2"></i> ${translations[currentLang].lockTxt} (${3 - shareCount})`;
+            showStatus("Analyzing video... Please wait (Server waking up)...", "#007bff");
+
+            try {
+                const response = await fetch(`${RENDER_SERVER}/download`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: videoUrl })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showStatus("Success! Downloading started...", "#28a745");
+                    
+                    // ተጠቃሚው ስሪቱን ለመጀመሪያ ጊዜ ማውረዱን መመዝገብ
+                    localStorage.setItem("download_count", "1");
+                    isSecondTime = true;
+
+                    // ቪዲዮውን በቴሌግራም በኩል ማውረድ
+                    tg.openLink(data.download_url);
+                } else {
+                    showStatus("Error: " + (data.error || "Unsupported link!"), "#ff4d4d");
+                }
+            } catch (error) {
+                showStatus("Server response timeout! Try again in a few seconds.", "#ff4d4d");
+                console.error(error);
+            } finally {
+                btn.disabled = false;
+            }
         }
-    }
 
-    function triggerAdAndDownload() {
-        AdController.show().then(() => { window.location.href = finalUrl; })
-                          .catch(() => { window.location.href = finalUrl; });
-    }
-</script>
+        function goToChannel() {
+            tg.openTelegramLink(TELEGRAM_CHANNEL);
+        }
 
+        function verifyJoin() {
+            localStorage.setItem("has_joined", "true");
+            hasJoined = true;
+            document.getElementById("channelModal").style.display = "none";
+            showStatus("Thank you for joining! You can now download.", "#28a745");
+        }
+
+        function showStatus(text, color) {
+            const el = document.getElementById("statusText");
+            el.innerText = text;
+            el.style.color = color;
+        }
+    </script>
 </body>
 </html>
