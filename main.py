@@ -1,14 +1,12 @@
-
 """
-DLX Multi-Downloader Bot
--------------------------
-Video/Audio downloader Telegram bot with:
-  - Ad message shown mid-download (sponsored message / button)
-  - Force-Join system: after a user exceeds a free-download limit,
-    they must join the main channel to continue
-  - Video -> Audio (MP3) conversion using yt-dlp + ffmpeg
+DLX Multi-Downloader Bot v2
+-----------------------------
+- Universal link downloader (yt-dlp: YouTube, TikTok, Facebook, Instagram, X, etc.)
+- Quality selection (Best / 720p / 480p / Audio-MP3)
+- Force-Join after free-download limit
+- Real AdsGram ad shown mid-download (https://docs.adsgram.ai)
+- Telegram Stars (XTR) support/donation to the bot owner
  
-Requirements: see requirements.txt
 Run: python bot.py
 """
  
@@ -18,9 +16,11 @@ import logging
 import os
 import uuid
  
+import httpx
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    LabeledPrice,
     Update,
 )
 from telegram.constants import ChatMemberStatus, ParseMode
@@ -30,6 +30,7 @@ from telegram.ext import (
     CommandHandler,
     ContextTypes,
     MessageHandler,
+    PreCheckoutQueryHandler,
     filters,
 )
 from yt_dlp import YoutubeDL
@@ -38,28 +39,39 @@ from yt_dlp import YoutubeDL
 # ================= CONFIGURATION (አርትዕ አድርግ) =================
 # ============================================================
  
-BOT_TOKEN = "PUT_YOUR_BOT_TOKEN_HERE"          # @BotFather ላይ የተቀበልከው ቶክን
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "PUT_YOUR_BOT_TOKEN_HERE")
  
-MAIN_CHANNEL_USERNAME = "@your_channel"        # Force-join የሚሆነው ዋና ቻናል (username)
-MAIN_CHANNEL_LINK = "https://t.me/your_channel"  # ተጠቃሚው ላይ የሚታይ ሊንክ
+MAIN_CHANNEL_USERNAME = "@your_channel"           # Force-join channel
+MAIN_CHANNEL_LINK = "https://t.me/your_channel"
  
-ADMIN_IDS = [123456789]                        # የAdmin telegram user id(s)
+ADMIN_IDS = [123456789]
  
-FREE_DOWNLOADS = 3          # ያለ join ስንት ጊዜ ማውረድ ይችላል (ተደጋጋሚ ሲሆን join ይገደዳል)
+FREE_DOWNLOADS = 3          # free downloads before force-join kicks in
  
-# ---- ማስታወቂያ (Ad) ማስተካከያ ----
-AD_TEXT = (
-    "📢 *Sponsored*\n\n"
-    "Your Ad / Sponsor message here.\n"
-    "Contact @your_ad_channel for advertising."
+# ---- AdsGram configuration ----
+# ከ https://partner.adsgram.ai ትፈጥራለህ (ከታች ባለው ማብራሪያ ላይ ዝርዝር አለ)
+ADSGRAM_ENABLED = True
+ADSGRAM_BLOCK_ID = "YOUR_BLOCK_ID"          # numeric only, no "bot-" prefix
+ADSGRAM_TOKEN = "YOUR_ADSGRAM_TOKEN"        # from your AdsGram profile
+ADSGRAM_LANGUAGE = "en"
+ADSGRAM_API_URL = "https://api.adsgram.ai/advbot"
+AD_DISPLAY_SECONDS = 4
+ 
+# fallback ad (used if AdsGram has no fill / is disabled)
+FALLBACK_AD_TEXT = (
+    "📢 <b>Sponsored</b>\n\nYour ad slot is empty right now.\n"
+    "Contact @your_ad_channel to advertise here."
 )
-AD_BUTTON_TEXT = "🔗 Visit Sponsor"
-AD_BUTTON_URL = "https://t.me/your_ad_channel"
-AD_DISPLAY_SECONDS = 4          # ማስታወቂያው ስንት ሰከንድ እንደሚታይ
+FALLBACK_AD_BUTTON_TEXT = "🔗 Learn more"
+FALLBACK_AD_BUTTON_URL = "https://t.me/your_ad_channel"
+ 
+# ---- Telegram Stars (donations to bot owner) ----
+STARS_ENABLED = True
+STARS_PRESET_AMOUNTS = [15, 50, 100, 250]     # amounts in Stars
  
 DOWNLOAD_DIR = "downloads"
 USERS_DB_FILE = "users_db.json"
-MAX_TELEGRAM_FILE_MB = 50        # Bot API upload limit (normal bot token)
+MAX_TELEGRAM_FILE_MB = 50
  
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -96,7 +108,7 @@ async def get_user_record(user_id: int) -> dict:
         db = _load_db()
         rec = db.get(str(user_id))
         if rec is None:
-            rec = {"downloads": 0, "verified": False}
+            rec = {"downloads": 0, "verified": False, "stars_donated": 0}
             db[str(user_id)] = rec
             _save_db(db)
         return rec
@@ -105,7 +117,7 @@ async def get_user_record(user_id: int) -> dict:
 async def increment_user_downloads(user_id: int) -> int:
     async with _db_lock:
         db = _load_db()
-        rec = db.setdefault(str(user_id), {"downloads": 0, "verified": False})
+        rec = db.setdefault(str(user_id), {"downloads": 0, "verified": False, "stars_donated": 0})
         rec["downloads"] += 1
         _save_db(db)
         return rec["downloads"]
@@ -114,14 +126,28 @@ async def increment_user_downloads(user_id: int) -> int:
 async def mark_verified(user_id: int) -> None:
     async with _db_lock:
         db = _load_db()
-        rec = db.setdefault(str(user_id), {"downloads": 0, "verified": False})
+        rec = db.setdefault(str(user_id), {"downloads": 0, "verified": False, "stars_donated": 0})
         rec["verified"] = True
+        _save_db(db)
+ 
+ 
+async def add_stars_donation(user_id: int, amount: int) -> None:
+    async with _db_lock:
+        db = _load_db()
+        rec = db.setdefault(str(user_id), {"downloads": 0, "verified": False, "stars_donated": 0})
+        rec["stars_donated"] = rec.get("stars_donated", 0) + amount
         _save_db(db)
  
  
 async def all_users_count() -> int:
     async with _db_lock:
         return len(_load_db())
+ 
+ 
+async def total_stars_donated() -> int:
+    async with _db_lock:
+        db = _load_db()
+        return sum(rec.get("stars_donated", 0) for rec in db.values())
  
  
 # ============================================================
@@ -151,11 +177,6 @@ def join_required_keyboard() -> InlineKeyboardMarkup:
  
  
 async def enforce_join_if_needed(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    """
-    Returns True if the user is allowed to continue.
-    If the free-download limit is passed and the user is not a channel
-    member, sends a force-join prompt and returns False.
-    """
     user_id = update.effective_user.id
     rec = await get_user_record(user_id)
  
@@ -167,34 +188,98 @@ async def enforce_join_if_needed(update: Update, context: ContextTypes.DEFAULT_T
         return True
  
     text = (
-        "🚫 *ነጻ ማውረጃ አልቋል!*\n\n"
+        "🚫 <b>ነጻ ማውረጃ አልቋል!</b>\n\n"
         f"ያለክፍያ የሚፈቀደው {FREE_DOWNLOADS} ማውረድ ተጠናቋል።\n"
-        "ቦቱን መጠቀም እንድትቀጥል እባክህ/ሽ የቻናላችንን አባል ሁን፣ ከዛ *✅ I Joined* ን ተጫን።"
+        "ቦቱን መጠቀም እንድትቀጥል የቻናላችንን አባል ሁን፣ ከዛ <b>✅ I Joined</b> ን ተጫን።"
     )
     await update.effective_message.reply_text(
-        text, parse_mode=ParseMode.MARKDOWN, reply_markup=join_required_keyboard()
+        text, parse_mode=ParseMode.HTML, reply_markup=join_required_keyboard()
     )
     return False
  
  
 # ============================================================
-# ======================= AD (SPONSOR) ========================
+# ======================= ADSGRAM AD ==========================
 # ============================================================
  
-async def show_ad(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
-    """Send a sponsored/ad message and let it stay visible for a bit
-    while the download continues in the background."""
-    keyboard = InlineKeyboardMarkup(
-        [[InlineKeyboardButton(AD_BUTTON_TEXT, url=AD_BUTTON_URL)]]
-    )
-    ad_msg = await context.bot.send_message(
-        chat_id=chat_id,
-        text=AD_TEXT,
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=keyboard,
-    )
+async def fetch_adsgram_ad(tgid: int) -> dict | None:
+    """Calls the real AdsGram API. Returns None if disabled/no-fill/error."""
+    if not ADSGRAM_ENABLED or ADSGRAM_BLOCK_ID == "YOUR_BLOCK_ID":
+        return None
+ 
+    params = {
+        "tgid": tgid,
+        "blockid": ADSGRAM_BLOCK_ID,
+        "language": ADSGRAM_LANGUAGE,
+        "token": ADSGRAM_TOKEN,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=6) as client:
+            resp = await client.get(ADSGRAM_API_URL, params=params)
+            if resp.status_code != 200:
+                logger.info("AdsGram no-fill or error: %s", resp.status_code)
+                return None
+            data = resp.json()
+            if not data.get("text_html"):
+                return None
+            return data
+    except Exception as e:
+        logger.warning("AdsGram request failed: %s", e)
+        return None
+ 
+ 
+async def show_ad(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int):
+    """
+    Shows a real AdsGram ad if available, otherwise a fallback sponsor slot.
+    protect_content=True keeps the ad from being forwarded (AdsGram requirement).
+    """
+    ad = await fetch_adsgram_ad(user_id)
+ 
+    if ad:
+        buttons = [[InlineKeyboardButton(ad["button_name"], url=ad["click_url"])]]
+        if ad.get("reward_url") and ad.get("button_reward_name"):
+            buttons.append(
+                [InlineKeyboardButton(ad["button_reward_name"], url=ad["reward_url"])]
+            )
+        try:
+            if ad.get("image_url"):
+                msg = await context.bot.send_photo(
+                    chat_id=chat_id,
+                    photo=ad["image_url"],
+                    caption=ad["text_html"],
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=InlineKeyboardMarkup(buttons),
+                    protect_content=True,
+                )
+            else:
+                msg = await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=ad["text_html"],
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=InlineKeyboardMarkup(buttons),
+                    protect_content=True,
+                )
+        except Exception as e:
+            logger.warning("Failed sending AdsGram ad, falling back: %s", e)
+            msg = await _send_fallback_ad(context, chat_id)
+    else:
+        msg = await _send_fallback_ad(context, chat_id)
+ 
     await asyncio.sleep(AD_DISPLAY_SECONDS)
-    return ad_msg
+    return msg
+ 
+ 
+async def _send_fallback_ad(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
+    keyboard = InlineKeyboardMarkup(
+        [[InlineKeyboardButton(FALLBACK_AD_BUTTON_TEXT, url=FALLBACK_AD_BUTTON_URL)]]
+    )
+    return await context.bot.send_message(
+        chat_id=chat_id,
+        text=FALLBACK_AD_TEXT,
+        parse_mode=ParseMode.HTML,
+        reply_markup=keyboard,
+        protect_content=True,
+    )
  
  
 # ============================================================
@@ -204,34 +289,96 @@ async def show_ad(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await get_user_record(update.effective_user.id)
     text = (
-        "👋 *Welcome to DLX Multi-Downloader!*\n\n"
-        "🎬 ማንኛውንም ቪድዮ ሊንክ ላክልኝ (YouTube, TikTok, Facebook, Instagram, ወዘተ) "
-        "እኔ ደግሞ *Video* ወይም *Audio (MP3)* አድርጌ አወርድልሃለሁ።\n\n"
-        f"ℹ️ ያለ ክፍያ {FREE_DOWNLOADS} ጊዜ ማውረድ ትችላለህ/ሽ። ከዛ በኋላ ቻናላችንን መቀላቀል ያስፈልጋል።"
+        "👋 <b>Welcome to DLX Multi-Downloader!</b>\n\n"
+        "🎬 ማንኛውንም ቪድዮ ሊንክ ላክልኝ (YouTube, TikTok, Facebook, Instagram, X, ወዘተ) "
+        "እኔ ደግሞ በምትፈልገው ጥራት <b>Video</b> ወይም <b>Audio (MP3)</b> አድርጌ አወርድልሃለሁ።\n\n"
+        f"ℹ️ ያለ ክፍያ {FREE_DOWNLOADS} ጊዜ ማውረድ ትችላለህ/ሽ። ከዛ ቻናላችንን መቀላቀል ያስፈልጋል።\n\n"
+        "⭐ ቦቱን መደገፍ ከፈለክ /donate ብለህ ላክ።"
     )
-    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text(text, parse_mode=ParseMode.HTML)
  
  
 async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in ADMIN_IDS:
         return
-    count = await all_users_count()
-    await update.message.reply_text(f"👥 Total users tracked: {count}")
+    users = await all_users_count()
+    stars = await total_stars_donated()
+    await update.message.reply_text(
+        f"👥 Total users: {users}\n⭐ Total Stars donated: {stars}"
+    )
+ 
+ 
+# ---- Telegram Stars donation flow ----
+ 
+async def donate_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not STARS_ENABLED:
+        await update.message.reply_text("⭐ Donations are currently disabled.")
+        return
+    buttons = [
+        [InlineKeyboardButton(f"⭐ {amt} Stars", callback_data=f"donate:{amt}")]
+        for amt in STARS_PRESET_AMOUNTS
+    ]
+    await update.message.reply_text(
+        "⭐ <b>Support DLX Multi-Downloader</b>\n\n"
+        "ቦቱ ነጻ ሆኖ እንዲቆይ የፈለከውን መጠን Telegram Stars ልትደግፍ ትችላለህ/ሽ 🙏",
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
+ 
+ 
+async def donate_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    _, amount_str = query.data.split(":", 1)
+    amount = int(amount_str)
+ 
+    await context.bot.send_invoice(
+        chat_id=query.message.chat_id,
+        title=f"Support DLX Bot - {amount} Stars",
+        description="Thank you for supporting the development of this bot! ⭐",
+        payload=f"stars_donation_{amount}_{query.from_user.id}",
+        provider_token="",          # empty string required for Telegram Stars (XTR)
+        currency="XTR",
+        prices=[LabeledPrice(label="Donation", amount=amount)],
+    )
+ 
+ 
+async def precheckout_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.pre_checkout_query
+    await query.answer(ok=True)
+ 
+ 
+async def successful_payment_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    payment = update.message.successful_payment
+    amount = payment.total_amount  # amount is already in Stars for XTR
+    await add_stars_donation(update.effective_user.id, amount)
+    await update.message.reply_text(
+        f"🎉 አመሰግናለሁ! {amount} ⭐ Stars ተቀብያለሁ። ድጋፍህ በጣም ይረዳል!"
+    )
  
  
 # ============================================================
 # ===================== LINK / DOWNLOAD =======================
 # ============================================================
  
-def _fmt_choice_keyboard(token: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton("🎥 Video", callback_data=f"dl_video:{token}"),
-                InlineKeyboardButton("🎵 Audio (MP3)", callback_data=f"dl_audio:{token}"),
-            ]
-        ]
-    )
+QUALITY_OPTIONS = [
+    ("🎥 Best Quality", "best"),
+    ("📺 720p", "720"),
+    ("📱 480p", "480"),
+    ("🎵 Audio (MP3)", "audio"),
+]
+ 
+ 
+def _quality_keyboard(token: str) -> InlineKeyboardMarkup:
+    rows, row = [], []
+    for label, key in QUALITY_OPTIONS:
+        row.append(InlineKeyboardButton(label, callback_data=f"dl:{key}:{token}"))
+        if len(row) == 2:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    return InlineKeyboardMarkup(rows)
  
  
 async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -243,22 +390,21 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ እባክህ/ሽ ትክክለኛ ሊንክ ላክ/ኪ።")
         return
  
-    # store url under a short token to keep callback_data small
     token = uuid.uuid4().hex[:10]
     context.bot_data.setdefault("pending_links", {})[token] = url
  
     await update.message.reply_text(
-        "🔎 ሊንኩን አገኘሁት! ምን አይነት ፋይል ትፈልጋለህ/ጊያለሽ?",
-        reply_markup=_fmt_choice_keyboard(token),
+        "🔎 ሊንኩን አገኘሁት! የምትፈልገውን ጥራት ምረጥ/ጪ፡",
+        reply_markup=_quality_keyboard(token),
     )
  
  
 async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
     data = query.data
  
     if data == "check_join":
+        await query.answer()
         user_id = query.from_user.id
         if await is_member_of_channel(context, user_id):
             await mark_verified(user_id)
@@ -267,26 +413,29 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("❌ ገና አልተቀላቀልክም/ም። እባክህ/ሽ መጀመሪያ ቻናሉን ተቀላቀል/ይ።", show_alert=True)
         return
  
-    if data.startswith("dl_video:") or data.startswith("dl_audio:"):
-        mode, token = data.split(":", 1)
+    if data.startswith("donate:"):
+        await donate_callback(update, context)
+        return
+ 
+    if data.startswith("dl:"):
+        await query.answer()
+        _, quality, token = data.split(":", 2)
         url = context.bot_data.get("pending_links", {}).get(token)
         if not url:
             await query.edit_message_text("⚠️ ይህ ሊንክ ጊዜው አልፎበታል፣ እባክህ/ሽ እንደገና ላክ/ኪ።")
             return
  
-        as_audio = mode == "dl_audio"
+        as_audio = quality == "audio"
         await query.edit_message_text("⏳ በማውረድ ላይ... እባክህ/ሽ ትንሽ ትዕግስት አድርግ/ጊ።")
  
         chat_id = query.message.chat_id
+        user_id = query.from_user.id
  
-        # --- Show a sponsored/ad message while the download happens ---
-        ad_task = asyncio.create_task(show_ad(context, chat_id))
-        download_task = asyncio.create_task(
-            do_download(url, as_audio=as_audio)
-        )
+        # --- Show AdsGram (or fallback) ad while the download happens ---
+        ad_task = asyncio.create_task(show_ad(context, chat_id, user_id))
+        download_task = asyncio.create_task(do_download(url, quality=quality))
         ad_msg, result = await asyncio.gather(ad_task, download_task)
  
-        # clean up the ad message so the chat doesn't stay cluttered
         try:
             await context.bot.delete_message(chat_id, ad_msg.message_id)
         except Exception:
@@ -307,25 +456,22 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         else:
             try:
-                if as_audio:
-                    await context.bot.send_audio(
-                        chat_id, audio=open(filepath, "rb"), caption="🎵 DLX Multi-Downloader"
-                    )
-                else:
-                    await context.bot.send_video(
-                        chat_id, video=open(filepath, "rb"), caption="🎬 DLX Multi-Downloader",
-                        supports_streaming=True,
-                    )
+                with open(filepath, "rb") as f:
+                    if as_audio:
+                        await context.bot.send_audio(chat_id, audio=f, caption="🎵 DLX Multi-Downloader")
+                    else:
+                        await context.bot.send_video(
+                            chat_id, video=f, caption="🎬 DLX Multi-Downloader", supports_streaming=True
+                        )
             except Exception as e:
                 await context.bot.send_message(chat_id, f"❌ መላክ አልተቻለም: {e}")
  
-        # cleanup
         try:
             os.remove(filepath)
         except OSError:
             pass
  
-        await increment_user_downloads(query.from_user.id)
+        await increment_user_downloads(user_id)
         context.bot_data.get("pending_links", {}).pop(token, None)
  
  
@@ -333,14 +479,21 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ======================= YT-DLP LOGIC =========================
 # ============================================================
  
-async def do_download(url: str, as_audio: bool) -> dict:
-    """Runs yt-dlp in a background thread so we don't block the event loop."""
+QUALITY_FORMAT_MAP = {
+    "best": "best[filesize<50M]/best",
+    "720": "best[height<=720][filesize<50M]/best[height<=720]",
+    "480": "best[height<=480][filesize<50M]/best[height<=480]",
+}
+ 
+ 
+async def do_download(url: str, quality: str) -> dict:
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, _blocking_download, url, as_audio)
+    return await loop.run_in_executor(None, _blocking_download, url, quality)
  
  
-def _blocking_download(url: str, as_audio: bool) -> dict:
+def _blocking_download(url: str, quality: str) -> dict:
     out_template = os.path.join(DOWNLOAD_DIR, f"{uuid.uuid4().hex}.%(ext)s")
+    as_audio = quality == "audio"
  
     ydl_opts = {
         "outtmpl": out_template,
@@ -363,19 +516,13 @@ def _blocking_download(url: str, as_audio: bool) -> dict:
             }
         )
     else:
-        ydl_opts.update(
-            {
-                # keep file size reasonable for telegram bot upload limits
-                "format": "best[filesize<50M]/best",
-            }
-        )
+        ydl_opts["format"] = QUALITY_FORMAT_MAP.get(quality, QUALITY_FORMAT_MAP["best"])
  
     try:
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
             filepath = ydl.prepare_filename(info)
             if as_audio:
-                # postprocessor changes extension to mp3
                 base, _ = os.path.splitext(filepath)
                 filepath = base + ".mp3"
         return {"ok": True, "filepath": filepath}
@@ -392,10 +539,13 @@ def main():
  
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("stats", stats_cmd))
+    app.add_handler(CommandHandler("donate", donate_cmd))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_link))
     app.add_handler(CallbackQueryHandler(callback_router))
+    app.add_handler(PreCheckoutQueryHandler(precheckout_callback))
+    app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_callback))
  
-    logger.info("DLX Multi-Downloader Bot starting...")
+    logger.info("DLX Multi-Downloader Bot v2 starting...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
  
  
