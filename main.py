@@ -1,4 +1,4 @@
- PY
+
 """
 DLX Multi-Downloader Bot
 -------------------------
